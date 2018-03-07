@@ -1,6 +1,6 @@
 {
-  "CmdType": "generic",
-  "CmdForm": "cat <<EOF | kubectl delete -o name -f -\n$EmbededJSON\n",
+  "CmdType": "k8s",
+  "CmdForm": "delete",
   "CmdEmbededJSON": [
     {
       "apiVersion": "v1",

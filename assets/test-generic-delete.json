@@ -1,0 +1,58 @@
+{
+  "CmdType": "k8s",
+  "CmdForm": "cat <<EOF | kubectl delete -o name -f -\n$EmbededJSON\n",
+  "CmdEmbededJSON": [
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "ubuntu",
+        "labels": {
+          "app": "ubuntu"
+        }
+      },
+      "spec": {
+        "ports": [
+          {
+            "port": 80,
+            "name": "http"
+          }
+        ],
+        "selector": {
+          "app": "ubuntu"
+        }
+      }
+    },
+    {
+      "apiVersion": "extensions/v1beta1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "ubuntu"
+      },
+      "spec": {
+        "replicas": 1,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "ubuntu"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "name": "ubuntu",
+                "image": "ubuntu:latest",
+                "command": [
+                  "/bin/bash",
+                  "-c",
+                  "trap : TERM INT; sleep infinity & wait"
+                ],
+                "imagePullPolicy": "IfNotPresent"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
