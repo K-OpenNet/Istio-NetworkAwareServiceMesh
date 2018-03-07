@@ -1,0 +1,10 @@
+{
+  "CmdType": "k8s",
+  "CmdForm": "po",
+  "CmdEmbededJSON": [
+	{
+		"Namespace": "istio-system",
+		"Selectors": []
+	}
+  ]
+}

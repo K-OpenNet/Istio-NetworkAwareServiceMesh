@@ -33,13 +33,55 @@ type JSONCmd struct {
 	CmdEmbededJSON []json.RawMessage
 }
 
+type K8sGetOpt struct {
+	Namespace string
+	Selectors []Selector
+}
+
+type Selector struct {
+	Operator rune
+	Label string
+	Value string
+}
+
 func main() {
 	http.HandleFunc("/generic", makeHandler(genericHandler))
 	http.HandleFunc("/k8s/apply", makeHandler(k8sApplyHandler))
 	http.HandleFunc("/k8s/delete", makeHandler(k8sDeleteHandler))
+	http.HandleFunc("/k8s/get", makeHandler(k8sGetHandler))
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
+
+func k8sGetHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr string) {
+		var embedJSON K8sGetOpt
+		err = json.Unmarshal(cmd.CmdEmbededJSON[0], &embedJSON)
+		if err != nil {
+			http.Error(w, "Error occured during unmarshalling the embeded JSON", 400)
+			return
+		}	
+	
+		// (e.g. -l key1=value1,key2=value2)
+		var b strings.Builder
+		fmt.Fprintf(&b, "kubectl get " + cmd.CmdForm + " -o json")		
+		fmt.Fprintf(&b, " -n " + embedJSON.Namespace)
+		if (embedJSON.Selectors != nil && len(embedJSON.Selectors) > 0) {
+			fmt.Fprintf(&b, " -l ")
+			for pos, sel := range embedJSON.Selectors {
+				fmt.Fprintf(&b, sel.Label)
+				fmt.Fprintf(&b, string(sel.Operator))
+				fmt.Fprintf(&b, sel.Value)
+				if (pos < len(embedJSON.Selectors) - 1) {
+					fmt.Fprintf(&b, ",")	
+				}
+			}
+		}
+		cmdFull := b.String()
+		fmt.Println("CmdFull: " + cmdFull)
+		
+		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
+		renderJSONResponse(w, r, cmdObj)
+	}
 
 func k8sDeleteHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr string) {
 		var b strings.Builder
@@ -105,7 +147,6 @@ func renderJSONResponse(w http.ResponseWriter, r *http.Request, cmdObj *exec.Cmd
 				} else {
 					bEsc = true
 				}
-				
 				continue
 			}
 			if (char == '{') {
