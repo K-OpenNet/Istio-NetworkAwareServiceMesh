@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"bytes"
+	"strings"
 )
 
 var err error
@@ -19,7 +20,7 @@ var ssh_key = "~/.ssh/netcs.key.plain"
 type JSONCmd struct {
 	CmdType    string
 	CmdForm    string
-	CmdContent json.RawMessage
+	CmdContent []json.RawMessage
 }
 
 func main() {
@@ -44,18 +45,35 @@ func main() {
 			fmt.Println("Error occured")
 			return
 		}
+		
+		var b strings.Builder
+		for _, obj := range cmd.CmdContent {
+			fmt.Fprintf(&b, string(obj))
+			fmt.Fprintf(&b, ",")
+		}
+		s := b.String()
+		s = stripChars(s, " ")
+		s = s[:len(s)-1]		
+		
 		fmt.Println("ReqBody: " + reqStr)
 		fmt.Println("CmdType: " + cmd.CmdType)
-		fmt.Println("CmdContent: " + string(cmd.CmdContent))
+		fmt.Println("CmdContent: " + s)
 		fmt.Println("CmdForm: " + cmd.CmdForm)
 		
 		if (cmd.CmdType == "k8s" && cmd.CmdForm == "apply") {
 //			bash -c "echo blahblah | cat"
 //			cmd := exec.Command("bash", "-c", "echo blahblah | cat")
 //			var head = ""
-//			cmd := "kubectl apply"	
+			cmd := "ls -al"	
+			// cmd := "cat <<EOF | kubectl apply -f -"
 //			cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmd)
-			cmd := "cat > blah.txt << EOF\n" + string(cmd.CmdContent) + "\n"
+			//cmd := "cat > blah.txt << EOF\n" + s + "\n"
+			
+			// for i, obj := range slice {}
+			
+			// var objMap map*json.RawMessage
+			// err = json.Unmarshal([]byte(cmd.CmdContent), &objMap)
+			
 			cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmd)
 			var out bytes.Buffer
 			cmdObj.Stdout = &out
@@ -68,4 +86,13 @@ func main() {
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func stripChars(str, chr string) string {
+    return strings.Map(func(r rune) rune {
+        if strings.IndexRune(chr, r) < 0 {
+            return r
+        }
+        return -1
+    }, str)
 }
