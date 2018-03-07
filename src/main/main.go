@@ -61,10 +61,10 @@ func k8sGetHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr
 			return
 		}	
 	
-		// (e.g. -l key1=value1,key2=value2)
 		var b strings.Builder
 		fmt.Fprintf(&b, "kubectl get " + cmd.CmdForm + " -o json")		
 		fmt.Fprintf(&b, " -n " + embedJSON.Namespace)
+		// Selector option expected output: -l key1=value1,key2=value2
 		if (embedJSON.Selectors != nil && len(embedJSON.Selectors) > 0) {
 			fmt.Fprintf(&b, " -l ")
 			for pos, sel := range embedJSON.Selectors {
@@ -79,8 +79,7 @@ func k8sGetHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr
 		cmdFull := b.String()
 		fmt.Println("CmdFull: " + cmdFull)
 		
-		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
-		renderJSONResponse(w, r, cmdObj)
+		renderJSONResponse(w, r, cmdFull)
 	}
 
 func k8sDeleteHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr string) {
@@ -92,8 +91,7 @@ func k8sDeleteHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBody
 		
 		fmt.Println("CmdFull: " + cmdFull)
 		
-		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
-		renderPlainResponse(w, r, cmdObj)
+		renderPlainResponse(w, r, cmdFull)
 	}
 
 func k8sApplyHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr string) {
@@ -105,43 +103,34 @@ func k8sApplyHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyS
 		
 		fmt.Println("CmdFull: " + cmdFull)
 		
-		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
-		renderJSONResponse(w, r, cmdObj)
+		renderJSONResponse(w, r, cmdFull)
 	}
 
-func renderPlainResponse(w http.ResponseWriter, r *http.Request, cmdObj *exec.Cmd) {
-		var out bytes.Buffer
-		var errout bytes.Buffer
-		cmdObj.Stdout = &out
-		cmdObj.Stderr = &errout
-		err = cmdObj.Run()
+func renderPlainResponse(w http.ResponseWriter, r *http.Request, cmdFull string) {
+		out, outerr, err := execCmd(cmdFull)
 		if err != nil {
-			fmt.Println(errout.String())
-			fmt.Fprintf(w, errout.String(), r.URL.Path[1:])
+			fmt.Println(outerr)
+			fmt.Fprintf(w, outerr, r.URL.Path[1:])
 			// log.Fatal(err)
 		}
-		fmt.Println(out.String())
-		fmt.Fprintf(w, out.String(), r.URL.Path[1:])	
+		
+		fmt.Println(out)
+		fmt.Fprintf(w, out, r.URL.Path[1:])	
 }
 
-func renderJSONResponse(w http.ResponseWriter, r *http.Request, cmdObj *exec.Cmd) {
-		var out bytes.Buffer
-		var errout bytes.Buffer
-		cmdObj.Stdout = &out
-		cmdObj.Stderr = &errout
-		err = cmdObj.Run()
+func renderJSONResponse(w http.ResponseWriter, r *http.Request, cmdFull string) {
+		out, outerr, err := execCmd(cmdFull)
 		if err != nil {
-			http.Error(w, errout.String(), 400)
+			http.Error(w, outerr, 400)
 			return
 		}
 
-		s := out.String()
 		depth := 0
 		bEsc := false
 		pHead := 0
 		jRes := make([]json.RawMessage, 0, 2)
-		for pos, char := range s {
-			if (char == '\x22') {
+		for pos, char := range out {
+			if (char == '\x22') { // '"' double quote char
 				if bEsc {
 					bEsc = false
 				} else {
@@ -159,7 +148,7 @@ func renderJSONResponse(w http.ResponseWriter, r *http.Request, cmdObj *exec.Cmd
 			if (char == '}') {
 				depth--
 				if (depth == 0) {
-					pStr := s[pHead:pos + 1]
+					pStr := out[pHead:pos + 1]
 					fmt.Println("pStr : " + pStr)
 					res, _ := json.Marshal(json.RawMessage(pStr))
 					fmt.Println("Marshalled : " + string(res))
@@ -178,8 +167,7 @@ func genericHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodySt
 		cmdFull := strings.Replace(cmd.CmdForm, "$EmbededJSON", rBodyStr, -1)
 		fmt.Println("CmdFull: " + cmdFull)
 		
-		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
-		renderPlainResponse(w, r, cmdObj)
+		renderPlainResponse(w, r, cmdFull)
 	}
 
 func makeHandler(fn func(http.ResponseWriter, *http.Request, JSONCmd, string)) http.HandlerFunc {
@@ -226,6 +214,16 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, JSONCmd, string)) h
 		fmt.Println("CmdEmbededJSON: " + rBodyStr)
         fn(w, r, cmd, rBodyStr)
     }
+}
+
+func execCmd(cmdFull string) (string, string, error) {
+	cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
+	var out, outerr bytes.Buffer
+	cmdObj.Stdout = &out
+	cmdObj.Stderr = &outerr
+	err := cmdObj.Run()
+	
+	return out.String(), outerr.String(), err
 }
 
 func stripChars(str, chr string) string {
