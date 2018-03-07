@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"bytes"
 	"strings"
+	"regexp"
 )
 
 var err error
@@ -17,18 +18,21 @@ var host = "210.117.251.17"
 var user = "mjkang"
 var ssh_key = "~/.ssh/netcs.key.plain"
 
+var validPath = regexp.MustCompile("^/(generic|k8s|istio)$")
+
 type JSONCmd struct {
 	CmdType    string
 	CmdForm    string
-	CmdContent []json.RawMessage
+	CmdEmbededJSON []json.RawMessage
 }
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Body == nil {
-			http.Error(w, "Please send a request body", 400)
-			return
-		}
+	http.HandleFunc("/generic", makeHandler(genericHandler))
+
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func genericHandler(w http.ResponseWriter, r *http.Request) {
 
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -46,46 +50,54 @@ func main() {
 			return
 		}
 		
+		// Stripping unnecessary whitespaces
 		var b strings.Builder
-		for _, obj := range cmd.CmdContent {
-			fmt.Fprintf(&b, string(obj))
-			fmt.Fprintf(&b, ",")
+		for _, obj := range cmd.CmdEmbededJSON {
+			jsonByte, _ := json.Marshal(obj)
+			fmt.Fprintf(&b, string(jsonByte))
+			fmt.Fprintf(&b, " ")
 		}
 		s := b.String()
-		s = stripChars(s, " ")
-		s = s[:len(s)-1]		
-		
+		s = s[:len(s)-1]
+				
 		fmt.Println("ReqBody: " + reqStr)
 		fmt.Println("CmdType: " + cmd.CmdType)
-		fmt.Println("CmdContent: " + s)
+		fmt.Println("CmdEmbededJSON: " + s)
 		fmt.Println("CmdForm: " + cmd.CmdForm)
 		
-		if (cmd.CmdType == "k8s" && cmd.CmdForm == "apply") {
-//			bash -c "echo blahblah | cat"
-//			cmd := exec.Command("bash", "-c", "echo blahblah | cat")
-//			var head = ""
-			cmd := "ls -al"	
-			// cmd := "cat <<EOF | kubectl apply -f -"
-//			cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmd)
-			//cmd := "cat > blah.txt << EOF\n" + s + "\n"
-			
-			// for i, obj := range slice {}
-			
-			// var objMap map*json.RawMessage
-			// err = json.Unmarshal([]byte(cmd.CmdContent), &objMap)
-			
-			cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmd)
-			var out bytes.Buffer
-			cmdObj.Stdout = &out
-			err := cmdObj.Run()
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println(out.String())			
+		cmdFull := strings.Replace(cmd.CmdForm, "$EmbededJSON", s, -1)
+		fmt.Println("CmdFull: " + cmdFull)
+		
+		cmdObj := exec.Command("ssh", "-i", ssh_key, user + "@" + host, cmdFull)
+		var out bytes.Buffer
+		var errout bytes.Buffer
+		cmdObj.Stdout = &out
+		cmdObj.Stderr = &errout
+		err = cmdObj.Run()
+		if err != nil {
+			fmt.Println(errout.String())
+			fmt.Fprintf(w, errout.String(), r.URL.Path[1:])
+			// log.Fatal(err)
 		}
-	})
+		fmt.Println(out.String())
+		fmt.Fprintf(w, out.String(), r.URL.Path[1:])
+	}
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+func makeHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        m := validPath.FindStringSubmatch(r.URL.Path)
+        if m == nil {
+            http.NotFound(w, r)
+            return
+        }
+        
+    		if r.Body == nil {
+			http.Error(w, "Please send a request body", 400)
+			return
+		}
+
+        fn(w, r)
+    }
 }
 
 func stripChars(str, chr string) string {
