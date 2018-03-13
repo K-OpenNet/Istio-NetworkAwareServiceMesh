@@ -14,6 +14,7 @@ import (
 
 var err error
 
+// Required constants for remote host
 var host = "210.117.251.17"
 var user = "mjkang"
 var ssh_key = "~/.ssh/netcs.key.plain"
@@ -47,6 +48,7 @@ type Selector struct {
 func main() {
 	http.HandleFunc("/generic", makeHandler(genericHandler))
 	http.HandleFunc("/k8s/apply", makeHandler(k8sApplyHandler))
+	http.HandleFunc("/k8s/replace", makeHandler(k8sReplaceHandler))
 	http.HandleFunc("/k8s/delete", makeHandler(k8sDeleteHandler))
 	http.HandleFunc("/k8s/get", makeHandler(k8sGetHandler))
 
@@ -106,6 +108,18 @@ func k8sApplyHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyS
 		renderJSONResponse(w, r, cmdFull)
 	}
 
+func k8sReplaceHandler(w http.ResponseWriter, r *http.Request, cmd JSONCmd, rBodyStr string) {
+		var b strings.Builder
+		fmt.Fprintf(&b, "cat <<EOF | kubectl replace -o json -f -\n")
+		fmt.Fprintf(&b, rBodyStr)
+		fmt.Fprintf(&b, "\n")
+		cmdFull := b.String()
+		
+		fmt.Println("CmdFull: " + cmdFull)
+		
+		renderJSONResponse(w, r, cmdFull)
+	}
+
 func renderPlainResponse(w http.ResponseWriter, r *http.Request, cmdFull string) {
 		out, outerr, err := execCmd(cmdFull)
 		if err != nil {
@@ -125,6 +139,9 @@ func renderJSONResponse(w http.ResponseWriter, r *http.Request, cmdFull string) 
 			return
 		}
 
+		// This is required because kubectl JSON response is not given in an array.
+		// The response is given like multiple JSON with one large object, and
+		// the JSONs are separated by only new line char. 
 		depth := 0
 		bEsc := false
 		pHead := 0
